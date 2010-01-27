@@ -1,0 +1,158 @@
+From 298343e1eb9afc2c6c3b4f3ced82122b985509d0 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Rafa=C3=ABl=20Carr=C3=A9?= <rafael.carre@gmail.com>
+Date: Mon, 7 Dec 2009 04:39:35 +0100
+Subject: [PATCH 1/7] libvlc: get ES from media player
+
+---
+ include/vlc/libvlc_media_player.h |   13 +++++++++++++
+ include/vlc_es_out.h              |    2 ++
+ include/vlc_input.h               |    5 +++++
+ src/control/media_player.c        |   14 ++++++++++++++
+ src/input/es_out.c                |   19 +++++++++++++++++++
+ src/input/input.c                 |    4 ++++
+ src/libvlc.sym                    |    1 +
+ src/libvlccore.sym                |    1 +
+ 8 files changed, 59 insertions(+), 0 deletions(-)
+
+diff --git a/include/vlc/libvlc_media_player.h b/include/vlc/libvlc_media_player.h
+index 090e743..804fa2b 100644
+--- a/include/vlc/libvlc_media_player.h
++++ b/include/vlc/libvlc_media_player.h
+@@ -1111,6 +1111,19 @@ VLC_PUBLIC_API void libvlc_audio_set_channel( libvlc_instance_t *,
+                                               int,
+                                               libvlc_exception_t * );
+ 
++/**
++ * Get Elementary Streams formats
++ *
++ * \param p_mi media_player
++ * \param i_es number of ES
++ * \param p_es array of ES formats
++ * \param p_e an initialized exception pointer
++ */
++VLC_PUBLIC_API int libvlc_media_player_get_es( libvlc_media_player_t *,
++                                              unsigned *,
++                                              void **,
++                                              libvlc_exception_t *);
++
+ /** @} audio */
+ 
+ /** @} media_player */
+diff --git a/include/vlc_es_out.h b/include/vlc_es_out.h
+index 3c425eb..787537b 100644
+--- a/include/vlc_es_out.h
++++ b/include/vlc_es_out.h
+@@ -85,6 +85,8 @@ enum es_out_query_e
+     /* Set global meta data (The vlc_meta_t is not modified nor released) */
+     ES_OUT_SET_META, /* arg1=const vlc_meta_t * */
+ 
++    ES_OUT_GET_ES, /* arg1=unsigned*, arg2=es_format_t** */
++
+     /* First value usable for private control */
+     ES_OUT_PRIVATE_START = 0x10000,
+ };
+diff --git a/include/vlc_input.h b/include/vlc_input.h
+index d25490e..573584c 100644
+--- a/include/vlc_input.h
++++ b/include/vlc_input.h
+@@ -631,4 +631,9 @@ VLC_EXPORT(input_resource_t *, input_DetachResource, ( input_thread_t * ) );
+  */
+ VLC_EXPORT(void, input_resource_Delete, ( input_resource_t * ) );
+ 
++/**
++ * This function gets the formats for all ES
++ */
++VLC_EXPORT(void, input_get_es, ( input_thread_t *, unsigned *, es_format_t ** ) );
++
+ #endif
+diff --git a/src/control/media_player.c b/src/control/media_player.c
+index 74bae47..c42f936 100644
+--- a/src/control/media_player.c
++++ b/src/control/media_player.c
+@@ -1250,3 +1250,17 @@ void libvlc_media_player_next_frame( libvlc_media_player_t *p_mi, libvlc_excepti
+         libvlc_printerr( "No active input" );
+     }
+ }
++
++int libvlc_media_player_get_es( libvlc_media_player_t *p_mi, unsigned *i_es,
++    void **p_es, libvlc_exception_t *p_e )
++{
++    input_thread_t *p_input_thread = libvlc_get_input_thread ( p_mi, p_e );
++    if( p_input_thread == NULL )
++        return -1;
++
++    input_get_es( p_input_thread, i_es, (es_format_t**)p_es );
++
++    vlc_object_release( p_input_thread );
++
++    return 0;
++}
+diff --git a/src/input/es_out.c b/src/input/es_out.c
+index 7d358ac..a4ea0bb 100644
+--- a/src/input/es_out.c
++++ b/src/input/es_out.c
+@@ -2565,6 +2565,25 @@ static int EsOutControlLocked( es_out_t *out, int i_query, va_list args )
+                                        i_pts_delay, i_cr_average );
+             return VLC_SUCCESS;
+         }
++        case ES_OUT_GET_ES:
++        {
++            unsigned *i_es = (unsigned *)va_arg( args, unsigned *);
++            es_format_t **p_es = (es_format_t**)va_arg( args, es_format_t**);
++            *i_es = p_sys->i_es;
++            *p_es = malloc(sizeof(es_format_t) * *i_es);
++            if(!p_es)
++            {
++                i_es = 0;
++                return VLC_ENOMEM;
++            }
++            for(unsigned i = 0; i < *i_es; i++)
++            {
++                //es_format_Copy(&(*p_es)[i], &p_sys->es[i]->fmt);
++                /* Get modifications made in decoder (profile/flavor) */
++                es_format_Copy(&(*p_es)[i], &p_sys->es[i]->p_dec->fmt_in);
++            }
++            return VLC_SUCCESS;
++        }
+ 
+         default:
+             msg_Err( p_sys->p_input, "unknown query in es_out_Control" );
+diff --git a/src/input/input.c b/src/input/input.c
+index 91b8d25..9195769 100644
+--- a/src/input/input.c
++++ b/src/input/input.c
+@@ -3317,3 +3317,7 @@ char *input_CreateFilename( vlc_object_t *p_obj, const char *psz_path, const cha
+     }
+ }
+ 
++void input_get_es( input_thread_t *p_input, unsigned *i_es, es_format_t **p_es )
++{
++    es_out_Control( p_input->p->p_es_out_display, ES_OUT_GET_ES, i_es, p_es );
++}
+diff --git a/src/libvlc.sym b/src/libvlc.sym
+index 5c2dd58..7778fa1 100644
+--- a/src/libvlc.sym
++++ b/src/libvlc.sym
+@@ -131,6 +131,7 @@ libvlc_media_player_get_agl
+ libvlc_media_player_get_chapter
+ libvlc_media_player_get_chapter_count
+ libvlc_media_player_get_chapter_count_for_title
++libvlc_media_player_get_es
+ libvlc_media_player_get_fps
+ libvlc_media_player_get_hwnd
+ libvlc_media_player_get_length
+diff --git a/src/libvlccore.sym b/src/libvlccore.sym
+index 9217093..55c14dd 100644
+--- a/src/libvlccore.sym
++++ b/src/libvlccore.sym
+@@ -183,6 +183,7 @@ input_DecoderDelete
+ input_DecoderNew
+ input_DetachResource
+ input_GetItem
++input_get_es
+ input_item_AddInfo
+ input_item_AddOption
+ input_item_AddSubItem
+-- 
+1.6.3.3
+

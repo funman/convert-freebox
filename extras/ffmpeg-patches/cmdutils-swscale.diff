@@ -1,0 +1,24 @@
+Index: cmdutils.c
+===================================================================
+--- cmdutils.c	(révision 21473)
++++ cmdutils.c	(copie de travail)
+@@ -340,7 +340,9 @@
+ #if CONFIG_AVFILTER
+     PRINT_LIB_VERSION(outstream, avfilter, AVFILTER, indent);
+ #endif
++#if CONFIG_SWSCALE
+     PRINT_LIB_VERSION(outstream, swscale,  SWSCALE,  indent);
++#endif
+ #if CONFIG_POSTPROC
+     PRINT_LIB_VERSION(outstream, postproc, POSTPROC, indent);
+ #endif
+@@ -373,7 +375,9 @@
+ #if CONFIG_AVFILTER
+     maybe_print_config("libavfilter", avfilter_configuration());
+ #endif
++#if CONFIG_SWSCALE
+     maybe_print_config("libswscale",  swscale_configuration());
++#endif
+ #if CONFIG_POSTPROC
+     maybe_print_config("libpostproc", postproc_configuration());
+ #endif

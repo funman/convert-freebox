@@ -1,0 +1,16 @@
+diff --git a/libavcodec/h264.c b/libavcodec/h264.c
+index e4a47cf..6440b0b 100644
+--- a/libavcodec/h264.c
++++ b/libavcodec/h264.c
+@@ -43,8 +43,9 @@
+ //#undef NDEBUG
+ #include <assert.h>
+ 
+-static void svq3_luma_dc_dequant_idct_c(DCTELEM *block, int qp);
+-static void svq3_add_idct_c(uint8_t *dst, DCTELEM *block, int stride, int qp, int dc);
++/* from svq3.c */
++void svq3_luma_dc_dequant_idct_c(DCTELEM *block, int qp);
++void svq3_add_idct_c(uint8_t *dst, DCTELEM *block, int stride, int qp, int dc);
+ 
+ static const uint8_t rem6[52]={
+ 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3,

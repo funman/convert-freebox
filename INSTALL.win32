@@ -1,0 +1,38 @@
+- 1 Setup QT4 cross compilation
+
+apt-get install mingw32 mingw32-runtime mingw32-binutils qt4-dev-tools
+
+(cd /usr/share/qt4/mkspecs ; sudo cp -r win32-g++ win32-x-g++)
+sudo cp extras/qmake.conf /usr/share/qt4/mkspecs/win32-x-g++
+
+- 2 build vlc 3rd party libraries
+
+git clone git://git.videolan.org/vlc.git
+cd vlc
+git checkout d4748057ae5b5e865a46ae4591d34dee43013e6a
+git am ../patches/*
+
+cd extras/contrib ; ./bootstrap i586-mingw32msvc && make -j4
+make package-win32 && tar zxf contrib-*.bz2
+sudo mv win32 /usr
+
+sudo mv ../../../extras/moc-4.6 /usr/win32 # moc qt-4.6 i386 linux binary
+sudo mv ../../../extras/uic-4.6 /usr/win32 # uic qt-4.6 i386 linux binary
+
+# XXX /!\ moc and uic binaries must be the SAME version than the windows Qt4 headers and libraries
+# Check the version of Qt4 for windows with: 
+
+grep QT_VERSION_STR src/qt4_win32/include/qt4/src/corelib/global/qglobal.h
+
+- 3 build vlc
+
+cd ../../ ; ./bootstrap
+cd .. ; mkdir ./build-vlc ; cd ./build-vlc
+../configure-win32.sh
+make
+
+4 - build app
+
+cd ..
+ln -s ./build-vlc/src/.libs lib
+./build-win32.sh

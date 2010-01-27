@@ -1,0 +1,54 @@
+From 691559a3a9026d75cc918bb0b5e33c0913d263e2 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Rafa=C3=ABl=20Carr=C3=A9?= <rafael.carre@gmail.com>
+Date: Mon, 25 Jan 2010 16:48:28 +0100
+Subject: [PATCH 7/7] ffmpeg: use gcc 4.0 to build
+
+Add a patch to matroska to add block duration field
+---
+ extras/contrib/src/Makefile                |    3 ++-
+ extras/contrib/src/Patches/ffmpeg-mkv.diff |   12 ++++++++++++
+ 2 files changed, 14 insertions(+), 1 deletions(-)
+ create mode 100644 extras/contrib/src/Patches/ffmpeg-mkv.diff
+
+diff --git a/extras/contrib/src/Makefile b/extras/contrib/src/Makefile
+index 2140da9..96730fe 100644
+--- a/extras/contrib/src/Makefile
++++ b/extras/contrib/src/Makefile
+@@ -149,7 +149,7 @@ endif
+ ifdef HAVE_DARWIN_OS
+ X264CONF=--host=$(HOST)
+ X264CONF += --enable-pic
+-FFMPEGCONF += --cc=$(CC)
++FFMPEGCONF += --cc=gcc-4.0
+ FFMPEGCONF += --arch=$(ARCH)
+ ifdef HAVE_DARWIN_64
+ FFMPEGCONF += --cpu=core2
+@@ -1025,6 +1025,7 @@ DISTCLEAN_PKG += amrwb-$(LIBAMR_WB_VERSION).tar.bz2
+ ifdef SVN
+ ffmpeg:
+ 	$(SVN) co $(FFMPEG_SVN) ffmpeg
++	(cd $@; patch -p0 < ../Patches/ffmpeg-mkv.diff)
+ ifdef HAVE_ISA_THUMB
+ 	patch -p0 < Patches/ffmpeg-avcodec-no-thumb.patch
+ endif
+diff --git a/extras/contrib/src/Patches/ffmpeg-mkv.diff b/extras/contrib/src/Patches/ffmpeg-mkv.diff
+new file mode 100644
+index 0000000..aa87f36
+--- /dev/null
++++ b/extras/contrib/src/Patches/ffmpeg-mkv.diff
+@@ -0,0 +1,12 @@
++Index: libavformat/matroskaenc.c
++===================================================================
++--- libavformat/matroskaenc.c	(revision 21000)
+++++ libavformat/matroskaenc.c	(working copy)
++@@ -864,6 +865,7 @@
++ 
++     if (codec->codec_type != CODEC_TYPE_SUBTITLE) {
++         mkv_write_block(s, MATROSKA_ID_SIMPLEBLOCK, pkt, keyframe << 7);
+++        put_ebml_uint(pb, MATROSKA_ID_BLOCKDURATION, duration);
++     } else if (codec->codec_id == CODEC_ID_SSA) {
++         duration = mkv_write_ass_blocks(s, pkt);
++     } else {
+-- 
+1.6.3.3
+

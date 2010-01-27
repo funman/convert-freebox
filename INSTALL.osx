@@ -1,0 +1,22 @@
+1 - Install QT SDK
+
+http://qt.nokia.com/downloads/sdk-mac-os-cpp
+
+2 - Get VLC and patch it
+
+git clone git://git.videolan.org/vlc.git
+cd vlc
+git checkout d4748057ae5b5e865a46ae4591d34dee43013e6a
+git am ../patches/*
+
+3 - Build VLC
+
+(cd extras/contrib && ./bootstrap && make using-src)
+./bootstrap && ./configure --disable-nls --disable-sqlite && make && make VLC-release.app
+
+cd ..
+ln -s ./vlc/VLC-release.app/Contents/MacOS/lib .
+
+4 - Build and package converter
+
+./build-osx.sh

@@ -1,0 +1,42 @@
+From dd5d39c967eea83580f3a61fa50bfb697c6e923f Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Rafa=C3=ABl=20Carr=C3=A9?= <rafael.carre@gmail.com>
+Date: Mon, 7 Dec 2009 04:41:48 +0100
+Subject: [PATCH 4/7] Store h264 level in (new) es video.i_level
+
+---
+ include/vlc_es.h          |    2 ++
+ modules/packetizer/h264.c |    5 +++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/include/vlc_es.h b/include/vlc_es.h
+index 02cd8c8..e36adc1 100644
+--- a/include/vlc_es.h
++++ b/include/vlc_es.h
+@@ -106,6 +106,8 @@ struct video_format_t
+ {
+     vlc_fourcc_t i_chroma;                               /**< picture chroma */
+ 
++    unsigned int i_level;                                /**< codec specific */
++
+     unsigned int i_width;                                 /**< picture width */
+     unsigned int i_height;                               /**< picture height */
+     unsigned int i_x_offset;               /**< start offset of visible area */
+diff --git a/modules/packetizer/h264.c b/modules/packetizer/h264.c
+index 886f12c..a597676 100644
+--- a/modules/packetizer/h264.c
++++ b/modules/packetizer/h264.c
+@@ -755,8 +755,9 @@ static void PutSPS( decoder_t *p_dec, block_t *p_frag )
+ 
+     bs_init( &s, pb_dec, i_dec );
+     int i_profile_idc = bs_read( &s, 8 );
+-    /* Skip constraint_set0123, reserved(4), level(8) */
+-    bs_skip( &s, 1+1+1+1 + 4 + 8 );
++    /* Skip constraint_set0123, reserved(4) */
++    bs_skip( &s, 1+1+1+1 + 4 );
++    p_dec->fmt_in.video.i_level = bs_read( &s, 8 ); /* level_idc */
+     /* sps id */
+     i_sps_id = bs_read_ue( &s );
+     if( i_sps_id >= SPS_MAX )
+-- 
+1.6.3.3
+

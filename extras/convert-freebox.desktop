@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=FreeBox Video Converter
+Name[fr]=Convertisseur de vidéos pour FreeBox
+Comment=Convert Videos into a FreeBox compatible format
+Comment[fr]=Convertit des vidéos dans un format compatible avec la FreeBox
+Exec=convert-freebox
+Icon=free
+Terminal=false
+Type=Application
+Categories=AudioVideo

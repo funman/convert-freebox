@@ -1,0 +1,34 @@
+From 11b9ff2fd2efe1e1d1f88df9bbe4a6320695e531 Mon Sep 17 00:00:00 2001
+From: =?utf-8?q?Rafa=C3=ABl=20Carr=C3=A9?= <rafael.carre@gmail.com>
+Date: Mon, 7 Dec 2009 04:41:13 +0100
+Subject: [PATCH 3/7] mpeg_audio: store layer in es audio.i_flavor
+
+---
+ modules/codec/mpeg_audio.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/modules/codec/mpeg_audio.c b/modules/codec/mpeg_audio.c
+index 6815abf..4b3a68d 100644
+--- a/modules/codec/mpeg_audio.c
++++ b/modules/codec/mpeg_audio.c
+@@ -285,6 +285,8 @@ static void *DecodeBlock( decoder_t *p_dec, block_t **pp_block )
+                                             &p_sys->i_max_frame_size,
+                                             &p_sys->i_layer );
+ 
++            p_dec->fmt_in.audio.i_flavor = p_sys->i_layer;
++
+             if( p_sys->i_frame_size == -1 )
+             {
+                 msg_Dbg( p_dec, "emulated startcode" );
+@@ -342,6 +344,8 @@ static void *DecodeBlock( decoder_t *p_dec, block_t **pp_block )
+                                               &i_next_max_frame_size,
+                                               &i_next_layer );
+ 
++                p_dec->fmt_in.audio.i_flavor = p_sys->i_layer;
++
+                 /* Free bitrate only */
+                 if( p_sys->i_bit_rate == 0 && i_next_frame_size == -1 )
+                 {
+-- 
+1.6.3.3
+
