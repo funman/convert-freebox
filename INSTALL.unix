@@ -18,9 +18,6 @@ svn co svn://svn.ffmpeg.org/ffmpeg/trunk ffmpeg
 cd ffmpeg
 patch -p0 < ../Patches/ffmpeg-mkv.diff
 
-# patch below might fail if svn changed, just ignore it in that case
-patch -f -p1 < ../../../../../extras/ffmpeg-patches/svq3_h264.diff
-
 ./configure --disable-mmx --enable-static --disable-shared --enable-pic --enable-gpl --disable-swscale --prefix=$PWD/inst
 make && make install
 
