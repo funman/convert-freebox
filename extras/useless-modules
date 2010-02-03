@@ -138,7 +138,6 @@ stream_filter_rar
 stream_filter_record
 stream_out_autodel
 stream_out_bridge
-stream_out_description
 stream_out_display
 stream_out_dummy
 stream_out_duplicate

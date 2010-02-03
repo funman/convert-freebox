@@ -1,31 +1,21 @@
-From 691559a3a9026d75cc918bb0b5e33c0913d263e2 Mon Sep 17 00:00:00 2001
+From 26009ae1f8f68ebeadb9b0928b2267f2b216a382 Mon Sep 17 00:00:00 2001
 From: =?utf-8?q?Rafa=C3=ABl=20Carr=C3=A9?= <rafael.carre@gmail.com>
 Date: Mon, 25 Jan 2010 16:48:28 +0100
-Subject: [PATCH 7/7] ffmpeg: use gcc 4.0 to build
+Subject: [PATCH] ffmpeg mkv add block duration field
 
-Add a patch to matroska to add block duration field
 ---
- extras/contrib/src/Makefile                |    3 ++-
+ extras/contrib/src/Makefile                |    1 +
  extras/contrib/src/Patches/ffmpeg-mkv.diff |   12 ++++++++++++
- 2 files changed, 14 insertions(+), 1 deletions(-)
+ 2 files changed, 13 insertions(+), 0 deletions(-)
  create mode 100644 extras/contrib/src/Patches/ffmpeg-mkv.diff
 
 diff --git a/extras/contrib/src/Makefile b/extras/contrib/src/Makefile
-index 2140da9..96730fe 100644
+index bfe6c0a..3d7bb4a 100644
 --- a/extras/contrib/src/Makefile
 +++ b/extras/contrib/src/Makefile
-@@ -149,7 +149,7 @@ endif
- ifdef HAVE_DARWIN_OS
- X264CONF=--host=$(HOST)
- X264CONF += --enable-pic
--FFMPEGCONF += --cc=$(CC)
-+FFMPEGCONF += --cc=gcc-4.0
- FFMPEGCONF += --arch=$(ARCH)
- ifdef HAVE_DARWIN_64
- FFMPEGCONF += --cpu=core2
-@@ -1025,6 +1025,7 @@ DISTCLEAN_PKG += amrwb-$(LIBAMR_WB_VERSION).tar.bz2
- ifdef SVN
- ffmpeg:
+@@ -1034,6 +1034,7 @@ else
+ ffmpeg: 
+ endif
  	$(SVN) co $(FFMPEG_SVN) ffmpeg
 +	(cd $@; patch -p0 < ../Patches/ffmpeg-mkv.diff)
  ifdef HAVE_ISA_THUMB

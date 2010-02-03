@@ -1,7 +1,7 @@
 /*
  * convert.c : libvlc-based video converter
  *
- * Copyright © 2009 Rafaël Carré
+ * Copyright © 2009-2010 Rafaël Carré
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -30,21 +31,28 @@
 
 #include <pthread.h>
 
-/* libvlc headers */
+#include <assert.h>
+
+/* libvlc */
 #include <vlc/libvlc.h>
 #include <vlc/libvlc_media.h>
 #include <vlc/libvlc_media_player.h>
 #include <vlc/libvlc_events.h>
 
-/* libvlccore headers */
-#include <vlc_es.h>
-#include <vlc_fourcc.h>
-
 #include "convert.h"
+
+#ifdef BIGENDIAN
+#define FOURCC( a, b, c, d ) \
+    ( ((uint32_t)d)         | ( ((uint32_t)c) << 8 ) | \
+    ( ((uint32_t)b) << 16 ) | ( ((uint32_t)a) << 24 ) )
+#else
+#define FOURCC( a, b, c, d ) \
+    ( ((uint32_t)a)         | ( ((uint32_t)b) << 8 ) | \
+    ( ((uint32_t)c) << 16 ) | ( ((uint32_t)d) << 24 ) )
+#endif
 
 /* globals variables XXX : not reentrant! */
 static libvlc_instance_t *libvlc;
-static libvlc_exception_t ex;
 static pthread_mutex_t callback_lock;
 
 /* libvlc settings */
@@ -58,6 +66,10 @@ static const char* const libvlc_args[] = {
     "--no-stats",               /* no stats */
     "--no-sub-autodetect",      /* don't want subtitles */
     "--no-disable-screensaver", /* no disabling screensaver */
+
+#if !defined(WIN32) && !defined(__APPLE__)
+    "--plugin-path=/usr/lib/convert-freebox/modules",
+#endif
 };
 
 static const int libvlc_nargs = sizeof(libvlc_args) / sizeof(libvlc_args[0]);
@@ -90,130 +102,124 @@ static int asprintf (char **strp, const char *fmt, ...)
 /* notify event catching */
 static void callback(const libvlc_event_t *ev, void *param)
 {
-    if( ev->type == libvlc_MediaPlayerPlaying ||
-        ev->type == libvlc_MediaPlayerEndReached )
-    {
-        pthread_mutex_lock(&callback_lock);
-        *(bool*)param = true;
-        pthread_mutex_unlock(&callback_lock);
-    }
-    else
-    {
-        fprintf(stderr, "ERROR: Catched event %s\n",
-            libvlc_event_type_name(ev->type));
-    }
+    assert( ev->type == libvlc_MediaPlayerPlaying ||
+            ev->type == libvlc_MediaPlayerEndReached );
+
+    pthread_mutex_lock(&callback_lock);
+    *(bool*)param = true;
+    pthread_mutex_unlock(&callback_lock);
 }
 
 
 /* video ES must be transcoded ? */
-static bool transcode_video(vlc_fourcc_t i_codec, unsigned int i_level)
+static bool transcode_video(uint32_t i_codec, unsigned int i_level)
 {
     switch(i_codec)
     {
     /* MPEG-1 */
-    case VLC_FOURCC('m','p','1','v'):
-    case VLC_FOURCC('m','p','e','g'):
-    case VLC_FOURCC('m','p','g','1'):
-    case VLC_FOURCC('P','I','M','1'):
+    case FOURCC('m','p','1','v'):
+    case FOURCC('m','p','e','g'):
+    case FOURCC('m','p','g','1'):
+    case FOURCC('P','I','M','1'):
     /* MPEG-2 */
-    case VLC_FOURCC('m','p','g','v'):
-    case VLC_FOURCC('m','p','2','v'):
-    case VLC_FOURCC('M','P','E','G'):
-    case VLC_FOURCC('m','p','g','2'):
-    case VLC_FOURCC('h','d','v','1'):
-    case VLC_FOURCC('h','d','v','2'):
-    case VLC_FOURCC('h','d','v','3'):
-    case VLC_FOURCC('h','d','v','5'):
-    case VLC_FOURCC('m','x','5','n'):
-    case VLC_FOURCC('m','x','5','p'):
-    case VLC_FOURCC('m','x','4','n'):
-    case VLC_FOURCC('m','x','4','p'):
-    case VLC_FOURCC('m','x','3','n'):
-    case VLC_FOURCC('m','x','3','p'):
-    case VLC_FOURCC('x','d','v','2'):
-    case VLC_FOURCC('A','V','m','p'):
-    case VLC_FOURCC('V','C','R','2'):
-    case VLC_FOURCC('M','M','E','S'):
-    case VLC_FOURCC('m','m','e','s'):
+    case FOURCC('m','p','g','v'):
+    case FOURCC('m','p','2','v'):
+    case FOURCC('M','P','E','G'):
+    case FOURCC('m','p','g','2'):
+    case FOURCC('h','d','v','1'):
+    case FOURCC('h','d','v','2'):
+    case FOURCC('h','d','v','3'):
+    case FOURCC('h','d','v','5'):
+    case FOURCC('m','x','5','n'):
+    case FOURCC('m','x','5','p'):
+    case FOURCC('m','x','4','n'):
+    case FOURCC('m','x','4','p'):
+    case FOURCC('m','x','3','n'):
+    case FOURCC('m','x','3','p'):
+    case FOURCC('x','d','v','2'):
+    case FOURCC('A','V','m','p'):
+    case FOURCC('V','C','R','2'):
+    case FOURCC('M','M','E','S'):
+    case FOURCC('m','m','e','s'):
     /* MPEG-4 */
-    case VLC_FOURCC('D','I','V','X'):
-    case VLC_FOURCC('d','i','v','x'):
-    case VLC_FOURCC('M','P','4','S'):
-    case VLC_FOURCC('M','P','4','s'):
-    case VLC_FOURCC('M','4','S','2'):
-    case VLC_FOURCC('m','4','s','2'):
-    case VLC_FOURCC('x','v','i','d'):
-    case VLC_FOURCC('X','V','I','D'):
-    case VLC_FOURCC('X','v','i','D'):
-    case VLC_FOURCC('X','V','I','X'):
-    case VLC_FOURCC('x','v','i','x'):
-    case VLC_FOURCC('D','X','5','0'):
-    case VLC_FOURCC('d','x','5','0'):
-    case VLC_FOURCC('B','L','Z','0'):
-    case VLC_FOURCC('B','X','G','M'):
-    case VLC_FOURCC('m','p','4','v'):
-    case VLC_FOURCC('M','P','4','V'):
-    case VLC_FOURCC( 4 , 0 , 0 , 0 ):
-    case VLC_FOURCC('m','4','c','c'):
-    case VLC_FOURCC('M','4','C','C'):
-    case VLC_FOURCC('F','M','P','4'):
-    case VLC_FOURCC('f','m','p','4'):
-    case VLC_FOURCC('3','I','V','2'):
-    case VLC_FOURCC('3','i','v','2'):
-    case VLC_FOURCC('U','M','P','4'):
-    case VLC_FOURCC('W','V','1','F'):
-    case VLC_FOURCC('S','E','D','G'):
-    case VLC_FOURCC('R','M','P','4'):
-    case VLC_FOURCC('H','D','X','4'):
-    case VLC_FOURCC('h','d','x','4'):
-    case VLC_FOURCC('S','M','P','4'):
-    case VLC_FOURCC('f','v','f','w'):
-    case VLC_FOURCC('F','V','F','W'):
+    case FOURCC('D','I','V','X'):
+    case FOURCC('d','i','v','x'):
+    case FOURCC('M','P','4','S'):
+    case FOURCC('M','P','4','s'):
+    case FOURCC('M','4','S','2'):
+    case FOURCC('m','4','s','2'):
+    case FOURCC('x','v','i','d'):
+    case FOURCC('X','V','I','D'):
+    case FOURCC('X','v','i','D'):
+    case FOURCC('X','V','I','X'):
+    case FOURCC('x','v','i','x'):
+    case FOURCC('D','X','5','0'):
+    case FOURCC('d','x','5','0'):
+    case FOURCC('B','L','Z','0'):
+    case FOURCC('B','X','G','M'):
+    case FOURCC('m','p','4','v'):
+    case FOURCC('M','P','4','V'):
+    case FOURCC( 4 , 0 , 0 , 0 ):
+    case FOURCC('m','4','c','c'):
+    case FOURCC('M','4','C','C'):
+    case FOURCC('F','M','P','4'):
+    case FOURCC('f','m','p','4'):
+    case FOURCC('3','I','V','2'):
+    case FOURCC('3','i','v','2'):
+    case FOURCC('U','M','P','4'):
+    case FOURCC('W','V','1','F'):
+    case FOURCC('S','E','D','G'):
+    case FOURCC('R','M','P','4'):
+    case FOURCC('H','D','X','4'):
+    case FOURCC('h','d','x','4'):
+    case FOURCC('S','M','P','4'):
+    case FOURCC('f','v','f','w'):
+    case FOURCC('F','V','F','W'):
     /* MSMPEG4 v1 (Not sure that we should include these) */
-    case VLC_FOURCC('D','I','V','1'):
-    case VLC_FOURCC('d','i','v','1'):
-    case VLC_FOURCC('M','P','G','4'):
-    case VLC_FOURCC('m','p','g','4'):
+    case FOURCC('D','I','V','1'):
+    case FOURCC('d','i','v','1'):
+    case FOURCC('M','P','G','4'):
+    case FOURCC('m','p','g','4'):
     /* MSMPEG4 v2 (Not sure that we should include these) */
-    case VLC_FOURCC('D','I','V','2'):
-    case VLC_FOURCC('d','i','v','2'):
-    case VLC_FOURCC('M','P','4','2'):
-    case VLC_FOURCC('m','p','4','2'):
+    case FOURCC('D','I','V','2'):
+    case FOURCC('d','i','v','2'):
+    case FOURCC('M','P','4','2'):
+    case FOURCC('m','p','4','2'):
     /* MSMPEG4 v3 (Not sure that we should include these) */
-    case VLC_FOURCC('M','P','G','3'):
-    case VLC_FOURCC('m','p','g','3'):
-    case VLC_FOURCC('d','i','v','3'):
-    case VLC_FOURCC('M','P','4','3'):
-    case VLC_FOURCC('m','p','4','3'):
-    case VLC_FOURCC('D','I','V','3'):
-    case VLC_FOURCC('D','I','V','4'):
-    case VLC_FOURCC('d','i','v','4'):
-    case VLC_FOURCC('D','I','V','5'):
-    case VLC_FOURCC('d','i','v','5'):
-    case VLC_FOURCC('D','I','V','6'):
-    case VLC_FOURCC('d','i','v','6'):
-    case VLC_FOURCC('C','O','L','1'):
-    case VLC_FOURCC('c','o','l','1'):
-    case VLC_FOURCC('C','O','L','0'):
-    case VLC_FOURCC('c','o','l','0'):
-    case VLC_FOURCC('A','P','4','1'):
-    case VLC_FOURCC('3','I','V','D'):
-    case VLC_FOURCC('3','i','v','d'):
-    case VLC_FOURCC('3','V','I','D'):
-    case VLC_FOURCC('3','v','i','d'):
+    case FOURCC('M','P','G','3'):
+    case FOURCC('m','p','g','3'):
+    case FOURCC('d','i','v','3'):
+    case FOURCC('M','P','4','3'):
+    case FOURCC('m','p','4','3'):
+    case FOURCC('D','I','V','3'):
+    case FOURCC('D','I','V','4'):
+    case FOURCC('d','i','v','4'):
+    case FOURCC('D','I','V','5'):
+    case FOURCC('d','i','v','5'):
+    case FOURCC('D','I','V','6'):
+    case FOURCC('d','i','v','6'):
+    case FOURCC('C','O','L','1'):
+    case FOURCC('c','o','l','1'):
+    case FOURCC('C','O','L','0'):
+    case FOURCC('c','o','l','0'):
+    case FOURCC('A','P','4','1'):
+    case FOURCC('3','I','V','D'):
+    case FOURCC('3','i','v','d'):
+    case FOURCC('3','V','I','D'):
+    case FOURCC('3','v','i','d'):
         return false;
 
-    case VLC_FOURCC('a','v','c','1'):
-    case VLC_FOURCC('A','V','C','1'):
-    case VLC_FOURCC('h','2','6','4'):
-    case VLC_FOURCC('H','2','6','4'):
-    case VLC_FOURCC('x','2','6','4'):
-    case VLC_FOURCC('X','2','6','4'):
-    case VLC_FOURCC('V','S','S','H'):
-    case VLC_FOURCC('V','S','S','W'):
-    case VLC_FOURCC('v','s','s','h'):
-    case VLC_FOURCC('D','A','V','C'):
-    case VLC_FOURCC('d','a','v','c'):
+    case FOURCC('a','v','c','1'):
+    case FOURCC('A','V','C','1'):
+    case FOURCC('h','2','6','4'):
+    case FOURCC('H','2','6','4'):
+    case FOURCC('x','2','6','4'):
+    case FOURCC('X','2','6','4'):
+    case FOURCC('V','S','S','H'):
+    case FOURCC('V','S','S','W'):
+    case FOURCC('v','s','s','h'):
+    case FOURCC('D','A','V','C'):
+    case FOURCC('d','a','v','c'):
         if(i_level <= 40) /* level 4.0 max */
             return false;
 
@@ -224,13 +230,13 @@ static bool transcode_video(vlc_fourcc_t i_codec, unsigned int i_level)
 
 
 /* audio ES must be transcoded ? */
-static bool transcode_audio(vlc_fourcc_t i_codec, unsigned int i_layer)
+static bool transcode_audio(uint32_t i_codec, unsigned int i_layer)
 {
     switch(i_codec)
     {
-    case VLC_CODEC_MP4A:
+    case FOURCC('m','p','4','a'):
         return false;
-    case VLC_CODEC_MPGA:
+    case FOURCC('m','p','g','a'):
         switch(i_layer)
         {
             case 1:
@@ -245,7 +251,7 @@ static bool transcode_audio(vlc_fourcc_t i_codec, unsigned int i_layer)
 /* transcode needed ES, mux all ES to mkv
  * blocking, progress is reported through a given callback */
 static int convert_write(const char *in, const char *out,
-                         unsigned i_es, es_format_t *p_es,
+                         unsigned i_es, libvlc_media_es_t *p_es,
                          void (*progress) (float, void*), void *param)
 {
     unsigned i_videos = 0;
@@ -256,11 +262,11 @@ static int convert_write(const char *in, const char *out,
 
     for(unsigned i = 0; i < i_es; i++)
     {
-        if(p_es[i].i_cat == VIDEO_ES)
+        if(p_es[i].i_type == libvlc_es_video)
             i_videos++;
-        else if(p_es[i].i_cat == SPU_ES)
+        else if(p_es[i].i_type == libvlc_es_text)
             i_subs++;
-        else if(p_es[i].i_cat == AUDIO_ES)
+        else if(p_es[i].i_type == libvlc_es_audio)
             i_audios++;
     }
 
@@ -279,11 +285,11 @@ static int convert_write(const char *in, const char *out,
 
     for(unsigned i = 0; i < i_es; i++)
     {
-        if(p_es[i].i_cat == VIDEO_ES)
-            video = transcode_video(p_es[i].i_codec, p_es[i].video.i_level);
-        else if(p_es[i].i_cat == AUDIO_ES)
+        if(p_es[i].i_type == libvlc_es_video)
+            video = transcode_video(p_es[i].i_codec, p_es[i].i_level);
+        else if(p_es[i].i_type == libvlc_es_audio)
             audio[i_audio++] =
-                transcode_audio(p_es[i].i_codec, p_es[i].audio.i_flavor);
+                transcode_audio(p_es[i].i_codec, p_es[i].i_profile);
     }
 
     char *sout;
@@ -393,8 +399,8 @@ static int convert_write(const char *in, const char *out,
         sout = new;
     }
 
-    libvlc_media_t *media = libvlc_media_new(libvlc, in, &ex);
-    if(libvlc_exception_raised(&ex))
+    libvlc_media_t *media = libvlc_media_new(libvlc, in);
+    if(!media)
         goto error;
 
     libvlc_media_add_option(media, "sout-all");
@@ -405,40 +411,38 @@ static int convert_write(const char *in, const char *out,
     libvlc_media_player_t *mp;
     libvlc_event_manager_t *em;
 
-    mp = libvlc_media_player_new_from_media(media, &ex);
-    if(libvlc_exception_raised(&ex))
+    mp = libvlc_media_player_new_from_media(media);
+    if(!mp)
         goto error;
-    em = libvlc_media_player_event_manager(mp, &ex);
-    if(libvlc_exception_raised(&ex))
+    em = libvlc_media_player_event_manager(mp);
+    if(!em)
         goto error;
     bool end = false;
-    libvlc_event_attach(em, libvlc_MediaPlayerEndReached, callback, &end, &ex);
-    if(libvlc_exception_raised(&ex))
+    if(libvlc_event_attach(em, libvlc_MediaPlayerEndReached, callback, &end))
         goto error;
 
-    libvlc_media_player_play(mp, &ex);
-    if(libvlc_exception_raised(&ex))
+    if(libvlc_media_player_play(mp))
         goto error;
 
     int ds = 0;
-    while(!end)
+    bool finished;
+    do
     {
         usleep(100000);
         if(ds++ == 10)
         {
             ds = 0;
-            float pos = libvlc_media_player_get_position(mp, &ex);
+            float pos = libvlc_media_player_get_position(mp);
             progress(pos, param);
         }
-    }
+        pthread_mutex_lock(&callback_lock);
+        finished = end;
+        pthread_mutex_unlock(&callback_lock);
+    } while(!finished);
 
-    libvlc_event_detach(em, libvlc_MediaPlayerEndReached, callback, &end, &ex);
-    if(libvlc_exception_raised(&ex))
-        goto error;
+    libvlc_event_detach(em, libvlc_MediaPlayerEndReached, callback, &end);
 
-    libvlc_media_player_stop(mp, &ex);
-    if(libvlc_exception_raised(&ex))
-        goto error;
+    libvlc_media_player_stop(mp);
 
     libvlc_media_player_release(mp);
 
@@ -459,32 +463,32 @@ audio_transcode_error:
 
 
 /* Extract all ES from input file (blocking) */
-static int convert_read(const char *in, unsigned *i_es, es_format_t **p_es)
+static int convert_read(const char *in, unsigned *i_es,
+    libvlc_media_es_t **pp_es)
 {
-    libvlc_media_t *m = libvlc_media_new(libvlc, in, &ex);
-    if(libvlc_exception_raised(&ex))
-        return -1;
+    libvlc_media_player_t *mp = NULL;
+
+    libvlc_media_t *m = libvlc_media_new(libvlc, in);
+    if(!m)
+        goto error;
 
     libvlc_media_add_option(m, "sout-all");
     libvlc_media_add_option(m, "no-sout-spu");
+    libvlc_media_add_option(m, "sout=#description");
 
-    libvlc_media_player_t *mp = libvlc_media_player_new_from_media(m, &ex);
-    libvlc_media_release(m);
-
+    mp = libvlc_media_player_new_from_media(m);
     if(!mp)
-        return -1;
+        goto error;
 
-    libvlc_event_manager_t *em = libvlc_media_player_event_manager(mp, &ex);
-    if(libvlc_exception_raised(&ex))
+    libvlc_event_manager_t *em = libvlc_media_player_event_manager(mp);
+    if(!em)
         goto error;
 
     bool playing = false;
-    libvlc_event_attach(em, libvlc_MediaPlayerPlaying, callback, &playing, &ex);
-    if(libvlc_exception_raised(&ex))
+    if(libvlc_event_attach(em, libvlc_MediaPlayerPlaying, callback, &playing))
         goto error;
 
-    libvlc_media_player_play(mp, &ex);
-    if(libvlc_exception_raised(&ex))
+    if(libvlc_media_player_play(mp))
         goto error;
 
     for(;;)
@@ -497,20 +501,20 @@ static int convert_read(const char *in, unsigned *i_es, es_format_t **p_es)
         usleep(100000); /* 0.1 second */
     }
 
-    libvlc_event_detach(em, libvlc_MediaPlayerPlaying, callback, &playing, &ex);
+    libvlc_event_detach(em, libvlc_MediaPlayerPlaying, callback, &playing);
 
-    libvlc_media_player_get_es(mp, i_es, (void**)p_es, &ex);
+    *i_es = libvlc_media_get_es(m, pp_es);
 
-    libvlc_media_player_stop(mp, &ex);
-    if(libvlc_exception_raised(&ex))
-        goto error;
+    libvlc_media_player_stop(mp);
 
+    libvlc_media_release(m);
     libvlc_media_player_release(mp);
 
     return 0;
 
 error:
-    libvlc_media_player_release(mp);
+    if(m) libvlc_media_release(m);
+    if(mp) libvlc_media_player_release(mp);
     return -1;
 }
 
@@ -521,12 +525,11 @@ error:
 /* library init */
 int convert_init(void)
 {
-    libvlc_exception_init(&ex);
     if(pthread_mutex_init(&callback_lock, NULL) != 0)
         return -1;
 
-    libvlc = libvlc_new(libvlc_nargs, libvlc_args, &ex);
-    if(libvlc_exception_raised(&ex))
+    libvlc = libvlc_new(libvlc_nargs, libvlc_args);
+    if(!libvlc)
         return -1;
 
     return 0;
@@ -545,10 +548,13 @@ void convert_exit(void)
 int convert(const char *in, const char *out, void (*progress) (float, void*), void *param)
 {
     unsigned i_es;
-    es_format_t *p_es = NULL;
+    libvlc_media_es_t *p_es = NULL;
 
     if(convert_read(in, &i_es, &p_es) != 0)
         return -1;
+
+    if(i_es == 0)
+        return -2;
 
     int ret = convert_write(in, out, i_es, p_es, progress, param);
 
