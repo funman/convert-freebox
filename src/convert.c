@@ -68,6 +68,8 @@ static const char* const libvlc_args[] = {
     "--no-disable-screensaver", /* no disabling screensaver */
 
 #if !defined(WIN32) && !defined(__APPLE__)
+    /* on windows & osx, libvlccore looks for plugins in the directory
+     * relative to executable or libvlccore */
     "--plugin-path=/usr/lib/convert-freebox/modules",
 #endif
 };
@@ -248,6 +250,30 @@ static bool transcode_audio(uint32_t i_codec, unsigned int i_layer)
     }
 }
 
+static char *get_transcode_chain(libvlc_media_es_t *p_es)
+{
+    char *chain;
+    int ret = -1;
+
+    if(p_es->i_type == libvlc_es_video)
+    {
+        ret = asprintf(&chain, "dst=transcode%s,select=es=%d",
+            transcode_video(p_es->i_codec, p_es->i_level) ?
+                "{vcodec=mp2v,vb=1000}" : "",
+            p_es->i_id);
+    }
+    else if(p_es->i_type == libvlc_es_audio)
+    {
+        ret = asprintf(&chain, "dst=transcode%s,select=es=%d",
+            transcode_audio(p_es->i_codec, p_es->i_profile) ?
+                "{acodec=mp2,ab=128000,channels=2}" : "",
+            p_es->i_id);
+    }
+    /* else, subs or unknown */
+
+    return (ret == -1) ? NULL : chain;
+}
+
 /* transcode needed ES, mux all ES to mkv
  * blocking, progress is reported through a given callback */
 static int convert_write(const char *in, const char *out,
@@ -256,18 +282,14 @@ static int convert_write(const char *in, const char *out,
 {
     unsigned i_videos = 0;
     unsigned i_subs = 0;
-    unsigned i_audios = 0;
 
-    char *p_channels, *p_ab, *p_acodec;
-
+    /* check ES */
     for(unsigned i = 0; i < i_es; i++)
     {
         if(p_es[i].i_type == libvlc_es_video)
             i_videos++;
         else if(p_es[i].i_type == libvlc_es_text)
             i_subs++;
-        else if(p_es[i].i_type == libvlc_es_audio)
-            i_audios++;
     }
 
     if(i_videos > 1)
@@ -279,125 +301,43 @@ static int convert_write(const char *in, const char *out,
     if(i_subs > 0)
         fprintf(stderr, "%d subtitles won't be included\n", i_subs);
 
-    bool video = false;
-    bool audio[i_audios];
-    unsigned i_audio = 0;
-
+    char *chains[i_es];
+    unsigned used_es = 0;
     for(unsigned i = 0; i < i_es; i++)
     {
-        if(p_es[i].i_type == libvlc_es_video)
-            video = transcode_video(p_es[i].i_codec, p_es[i].i_level);
-        else if(p_es[i].i_type == libvlc_es_audio)
-            audio[i_audio++] =
-                transcode_audio(p_es[i].i_codec, p_es[i].i_profile);
+        char *chain = get_transcode_chain(&p_es[i]);
+        if(chain)
+            chains[used_es++] = chain;
     }
 
-    char *sout;
-    bool transcode_audio_stream = false;
-    for(unsigned i = 0; i < i_audio; i++)
-        if(audio[i])
-            transcode_audio_stream = true;
-
-    if(!video && !transcode_audio_stream)
+    if(used_es == 0)
     {
-        if(asprintf(&sout, "sout=#std{access=file,dst=%s}", out) == -1)
-            return -1;
+        fprintf(stderr, "No Elementary Streams found!\n");
+        return -1;
     }
-    else
+
+    char *std = NULL, *sout = strdup("sout=#duplicate{");
+    if(!sout)
+        goto transcode_error;
+
+    if(asprintf(&std, "}:std{access=file,dst=%s}", out) == -1)
+        goto transcode_error;
+
+    for(unsigned i = 0; i < used_es; i++)
     {
-        if(asprintf(&sout, "%s", "sout=#transcode{") == -1)
-            return -1;
-
-        if(video)
-        {
-            char *new;
-            if(asprintf(&new, "%svcodec=mp2v,vb=1000", sout) == -1) /* VBR ? */
-            {
-                free(sout);
-                return -1;
-            }
-            free(sout);
-            sout = new;
-        }
-
-        if(!transcode_audio_stream)
-        {
-            char acodec[sizeof("copy,") * i_audios];
-            for(unsigned i = 0; i < i_audios; i++)
-                memcpy(&acodec[5*i], "copy,", 5);
-            acodec[(sizeof("copy,") * i_audios) - 1] = '\0';
-
-
-            char *new;
-            if(asprintf(&new, "%s%sacodec=%s}:std{access=file,dst=%s}",
-                    sout, acodec, video ? "," : "", out) == -1)
-            {
-                free(sout);
-                return -1;
-            }
-            free(sout);
-            sout = new;
-        }
-        else
-        {
-            char *new;
-
-            p_channels = strdup("channels={");
-            p_ab = strdup("ab={");
-            p_acodec = strdup("acodec={");
-            if(!p_channels || !p_ab || !p_acodec)
-                goto audio_transcode_error;
-
-            for(unsigned i = 0; i < i_audios; i++)
-            {
-                char *acodec;
-                unsigned channels, ab;
-                if(audio[i])
-                {
-                    ab = 128000;
-                    channels = 2;
-                    acodec = "mp2";
-                }
-                else
-                {
-                    ab = 0;
-                    channels = 0;
-                    acodec = "copy";
-                }
-
-                if(asprintf(&new, "%s%d,", p_ab, ab ) == -1)
-                    goto audio_transcode_error;
-                free(p_ab); p_ab = new;
-
-                if(asprintf(&new, "%s%d,", p_channels, channels ) == -1)
-                    goto audio_transcode_error;
-                free(p_channels); p_channels = new;
-
-                if(asprintf(&new, "%s%s,", p_acodec, acodec ) == -1)
-                    goto audio_transcode_error;
-                free(p_acodec); p_acodec = new;
-            }
-
-            p_ab[strlen(p_ab) - 1] = '}';
-            p_channels[strlen(p_channels) - 1] = '}';
-            p_acodec[strlen(p_acodec) - 1] = '}';
-
-            if(asprintf(&new, "%s%s%s,%s,%s", sout, video ? "," : "", p_acodec,
-                    p_ab, p_channels) == -1)
-                goto audio_transcode_error;
-
-            free(sout); sout = new;
-        }
-
         char *new;
-        if(asprintf(&new, "%s}:std{access=file,dst=%s}", sout, out) == -1)
+        if(-1 == asprintf(&new, "%s%s%s", sout, chains[i],
+                (i == used_es - 1) ? std : ","))
         {
-            free(sout);
-            return -1;
+            free(std);
+            goto transcode_error;
         }
         free(sout);
         sout = new;
     }
+
+    for(unsigned i = 0; i < used_es; i++)
+        free(chains[i]);
 
     libvlc_media_t *media = libvlc_media_new(libvlc, in);
     if(!media)
@@ -453,11 +393,12 @@ error:
     libvlc_media_release(media);
     return -1;
 
-audio_transcode_error:
-    free(p_channels);
-    free(p_ab);
-    free(p_acodec);
+transcode_error:
     free(sout);
+    free(std);
+    for(unsigned i = 0; i < used_es; i++)
+        free(chains[i]);
+
     return -1;
 }
 

@@ -140,7 +140,6 @@ stream_out_autodel
 stream_out_bridge
 stream_out_display
 stream_out_dummy
-stream_out_duplicate
 stream_out_es
 stream_out_gather
 stream_out_mosaic_bridge
