@@ -250,19 +250,19 @@ static bool transcode_audio(uint32_t i_codec, unsigned int i_layer)
     }
 }
 
-static char *get_transcode_chain(libvlc_media_es_t *p_es)
+static char *get_transcode_chain(libvlc_media_track_info_t *p_es)
 {
     char *chain;
     int ret = -1;
 
-    if(p_es->i_type == libvlc_es_video)
+    if(p_es->i_type == libvlc_track_video)
     {
         ret = asprintf(&chain, "dst=transcode%s,select=es=%d",
             transcode_video(p_es->i_codec, p_es->i_level) ?
                 "{vcodec=mp2v,vb=1000}" : "",
             p_es->i_id);
     }
-    else if(p_es->i_type == libvlc_es_audio)
+    else if(p_es->i_type == libvlc_track_audio)
     {
         ret = asprintf(&chain, "dst=transcode%s,select=es=%d",
             transcode_audio(p_es->i_codec, p_es->i_profile) ?
@@ -277,7 +277,7 @@ static char *get_transcode_chain(libvlc_media_es_t *p_es)
 /* transcode needed ES, mux all ES to mkv
  * blocking, progress is reported through a given callback */
 static int convert_write(const char *in, const char *out,
-                         unsigned i_es, libvlc_media_es_t *p_es,
+                         unsigned i_es, libvlc_media_track_info_t *p_es,
                          void (*progress) (float, void*), void *param)
 {
     unsigned i_videos = 0;
@@ -286,9 +286,9 @@ static int convert_write(const char *in, const char *out,
     /* check ES */
     for(unsigned i = 0; i < i_es; i++)
     {
-        if(p_es[i].i_type == libvlc_es_video)
+        if(p_es[i].i_type == libvlc_track_video)
             i_videos++;
-        else if(p_es[i].i_type == libvlc_es_text)
+        else if(p_es[i].i_type == libvlc_track_text)
             i_subs++;
     }
 
@@ -339,7 +339,7 @@ static int convert_write(const char *in, const char *out,
     for(unsigned i = 0; i < used_es; i++)
         free(chains[i]);
 
-    libvlc_media_t *media = libvlc_media_new(libvlc, in);
+    libvlc_media_t *media = libvlc_media_new_path(libvlc, in);
     if(!media)
         goto error;
 
@@ -405,11 +405,11 @@ transcode_error:
 
 /* Extract all ES from input file (blocking) */
 static int convert_read(const char *in, unsigned *i_es,
-    libvlc_media_es_t **pp_es)
+    libvlc_media_track_info_t **pp_es)
 {
     libvlc_media_player_t *mp = NULL;
 
-    libvlc_media_t *m = libvlc_media_new(libvlc, in);
+    libvlc_media_t *m = libvlc_media_new_path(libvlc, in);
     if(!m)
         goto error;
 
@@ -444,7 +444,7 @@ static int convert_read(const char *in, unsigned *i_es,
 
     libvlc_event_detach(em, libvlc_MediaPlayerPlaying, callback, &playing);
 
-    *i_es = libvlc_media_get_es(m, pp_es);
+    *i_es = libvlc_media_get_tracks_info(m, pp_es);
 
     libvlc_media_player_stop(mp);
 
@@ -489,7 +489,7 @@ void convert_exit(void)
 int convert(const char *in, const char *out, void (*progress) (float, void*), void *param)
 {
     unsigned i_es;
-    libvlc_media_es_t *p_es = NULL;
+    libvlc_media_track_info_t *p_es = NULL;
 
     if(convert_read(in, &i_es, &p_es) != 0)
         return -1;
