@@ -104,8 +104,7 @@ static int asprintf (char **strp, const char *fmt, ...)
 /* notify event catching */
 static void callback(const libvlc_event_t *ev, void *param)
 {
-    assert( ev->type == libvlc_MediaPlayerPlaying ||
-            ev->type == libvlc_MediaPlayerEndReached );
+    assert( ev->type == libvlc_MediaPlayerEndReached );
 
     pthread_mutex_lock(&callback_lock);
     *(bool*)param = true;
@@ -259,7 +258,7 @@ static char *get_transcode_chain(libvlc_media_track_info_t *p_es)
     {
         ret = asprintf(&chain, "dst=transcode%s,select=es=%d",
             transcode_video(p_es->i_codec, p_es->i_level) ?
-                "{vcodec=mp2v,vb=1000}" : "",
+                "{vcodec=mp2v,vb=1000,fps=25}" : "",
             p_es->i_id);
     }
     else if(p_es->i_type == libvlc_track_audio)
@@ -407,56 +406,16 @@ transcode_error:
 static int convert_read(const char *in, unsigned *i_es,
     libvlc_media_track_info_t **pp_es)
 {
-    libvlc_media_player_t *mp = NULL;
-
     libvlc_media_t *m = libvlc_media_new_path(libvlc, in);
     if(!m)
-        goto error;
+        return 1;
 
-    libvlc_media_add_option(m, "sout-all");
-    libvlc_media_add_option(m, "no-sout-spu");
-    libvlc_media_add_option(m, "sout=#description");
-
-    mp = libvlc_media_player_new_from_media(m);
-    if(!mp)
-        goto error;
-
-    libvlc_event_manager_t *em = libvlc_media_player_event_manager(mp);
-    if(!em)
-        goto error;
-
-    bool playing = false;
-    if(libvlc_event_attach(em, libvlc_MediaPlayerPlaying, callback, &playing))
-        goto error;
-
-    if(libvlc_media_player_play(mp))
-        goto error;
-
-    for(;;)
-    {
-        bool b;
-        pthread_mutex_lock(&callback_lock);
-        b = playing;
-        pthread_mutex_unlock(&callback_lock);
-        if(b) break;
-        usleep(100000); /* 0.1 second */
-    }
-
-    libvlc_event_detach(em, libvlc_MediaPlayerPlaying, callback, &playing);
-
+    libvlc_media_parse(m);
     *i_es = libvlc_media_get_tracks_info(m, pp_es);
 
-    libvlc_media_player_stop(mp);
-
     libvlc_media_release(m);
-    libvlc_media_player_release(mp);
 
     return 0;
-
-error:
-    if(m) libvlc_media_release(m);
-    if(mp) libvlc_media_player_release(mp);
-    return -1;
 }
 
 
